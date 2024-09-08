@@ -5,6 +5,7 @@ from skeleton.actions import RockAction, PaperAction, ScissorsAction
 from skeleton.bot import Bot
 from skeleton.runner import parse_args, run_bot
 from collections import Counter
+from dataclasses import dataclass
 
 import random
 
@@ -13,6 +14,8 @@ class Player(Bot):
     '''
     A bot for playing Rock-Paper-Scissors.
     '''
+
+    history: list["Turn"]
 
     def __init__(self):
         '''
@@ -28,7 +31,7 @@ class Player(Bot):
         Called after a round. Called NUM_ROUNDS times.
         '''
         
-        self.history.append((my_action, their_action))
+        self.history.append(Turn(my_action, their_action))
         self.my_profit += my_payoff
         self.their_action_counter[their_action] += 1
 
@@ -40,20 +43,26 @@ class Player(Bot):
         Returns a RockAction(), PaperAction(), or ScissorsAction().
         '''
         if self.my_profit < -20 or not self.history:
-            return random.choice([RockAction(), PaperAction(), ScissorsAction()])
+            return self.random_action()
     
         if (action := self.counter_sequence()) is not None:
             return action
+        if (action := self.counter_copycat()) is not None:
+            return action
+        if (action := self.counter_simple_countering()) is not None:
+            return action
         if (action := self.counter_biased()) is not None:
             return action
-        if (action := self.counter_counter_action()) is not None:
-            return action
+        return self.random_action()
+
+    def random_action(self):
+        return random.choice([RockAction(), PaperAction(), ScissorsAction()])
 
 
     def counter_sequence(self):
         if len(self.history) < 5:
             return None
-        last_5_set = {action for _, action in self.history[-5:]}
+        last_5_set = {turn.their_action for turn in self.history[-5:]}
         match last_5_set:
             case ConstantSets.ROCK_ONLY:
                 return PaperAction()
@@ -76,15 +85,43 @@ class Player(Bot):
                 return RockAction()
         return None
     
-    def counter_counter_action(self):
-        action = self.history[-1][0]
-        if isinstance(action, RockAction):
+    def counter_copycat(self):
+        if len(self.history) < 5:
+            return None
+        for i in range(4):
+            if type(self.history[-i-1].their_action) != type(self.history[-i-2].my_action):
+                return None
+        if isinstance(self.history[-1].my_action, RockAction):
+            return PaperAction()
+        elif isinstance(self.history[-1].my_action, PaperAction):
             return ScissorsAction()
-        elif isinstance(action, PaperAction):
+        elif isinstance(self.history[-1].my_action, ScissorsAction):
             return RockAction()
-        elif isinstance(action, ScissorsAction):
+        
+
+    def counter_simple_countering(self):
+        if len(self.history) < 5:
+            return None
+        for i in range(4):
+            if isinstance(self.history[-i-2].my_action, RockAction) and not isinstance(self.history[-i-1].their_action, PaperAction):
+                return None
+            if isinstance(self.history[-i-2].my_action, PaperAction) and not isinstance(self.history[-i-1].their_action, ScissorsAction):
+                return None
+            if isinstance(self.history[-i-2].my_action, ScissorsAction) and not isinstance(self.history[-i-1].their_action, RockAction):
+                return None
+        my_last_action = self.history[-1].my_action
+        if isinstance(my_last_action, RockAction):
+            return ScissorsAction()
+        elif isinstance(my_last_action, PaperAction):
+            return RockAction()
+        elif isinstance(my_last_action, ScissorsAction):
             return PaperAction()
 
+
+@dataclass
+class Turn:
+    my_action: RockAction | PaperAction | ScissorsAction
+    their_action: RockAction | PaperAction | ScissorsAction
 
 
 class ConstantSets:
