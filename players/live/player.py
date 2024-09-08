@@ -24,7 +24,6 @@ class Player(Bot):
         
         self.my_profit = 0
         self.history = []
-        self.their_action_counter = Counter()
 
     def handle_results(self, *, my_action, their_action, my_payoff, match_clock):
         '''
@@ -33,7 +32,6 @@ class Player(Bot):
         
         self.history.append(Turn(my_action, their_action))
         self.my_profit += my_payoff
-        self.their_action_counter[their_action] += 1
 
     def get_action(self, *, match_clock):
         '''
@@ -42,11 +40,9 @@ class Player(Bot):
 
         Returns a RockAction(), PaperAction(), or ScissorsAction().
         '''
-        if self.my_profit < -20 or not self.history:
+        if self.my_profit < -20 or len(self.history) < 4:
             return self.random_action()
     
-        if (action := self.counter_constant()) is not None:
-            return action
         if (action := self.counter_copycat()) is not None:
             return action
         if (action := self.counter_repetitive()) is not None:
@@ -60,30 +56,15 @@ class Player(Bot):
     def random_action(self):
         return random.choice([RockAction(), PaperAction(), ScissorsAction()])
 
-    def counter_constant(self):
-        if len(self.history) < 5:
-            return None
-        their_actions_set = {turn.their_action for turn in self.history}
-        match their_actions_set:
-            case ConstantSets.ROCK_ONLY:
-                return PaperAction()
-            case ConstantSets.PAPER_ONLY:
-                return ScissorsAction()
-            case ConstantSets.SCISSORS_ONLY:
-                return RockAction()
-            case _:
-                return None
-
     def counter_biased(self):
-        their_action_ratios = {action: count / len(self.history) for action, count in self.their_action_counter.items()}
+        their_action_counter = Counter([turn.their_action for turn in self.history])
+        their_action_ratios = {action: count / len(self.history) for action, count in their_action_counter.items()}
         max_ratio = max(their_action_ratios.items(), key=lambda x: x[1])
-        if max_ratio[1] > 0.4:
+        if max_ratio[1] > 0.35:
             return counter(max_ratio[0])
         return None
     
     def counter_copycat(self):
-        if len(self.history) < 5:
-            return None
         for i in range(1, len(self.history) - 1):
             if type(self.history[i].their_action) != type(self.history[i-1].my_action):
                 return None
@@ -91,8 +72,6 @@ class Player(Bot):
         
 
     def counter_simple_countering(self):
-        if len(self.history) < 5:
-            return None
         for i in range(1, len(self.history) - 1):
             if type(self.history[i].their_action) != type(counter(self.history[i-1].my_action)):
                 return None
@@ -101,8 +80,6 @@ class Player(Bot):
     
 
     def counter_repetitive(self):
-        if len(self.history) < 5:
-            return None
         for cycle_turns in range(1, int(len(self.history) // 2)):
             is_cycle = True
             for i in range(cycle_turns):
