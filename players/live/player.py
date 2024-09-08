@@ -45,9 +45,11 @@ class Player(Bot):
         if self.my_profit < -20 or not self.history:
             return self.random_action()
     
-        if (action := self.counter_sequence()) is not None:
+        if (action := self.counter_constant()) is not None:
             return action
         if (action := self.counter_copycat()) is not None:
+            return action
+        if (action := self.counter_repetitive()) is not None:
             return action
         if (action := self.counter_simple_countering()) is not None:
             return action
@@ -58,12 +60,11 @@ class Player(Bot):
     def random_action(self):
         return random.choice([RockAction(), PaperAction(), ScissorsAction()])
 
-
-    def counter_sequence(self):
+    def counter_constant(self):
         if len(self.history) < 5:
             return None
-        last_5_set = {turn.their_action for turn in self.history[-5:]}
-        match last_5_set:
+        their_actions_set = {turn.their_action for turn in self.history}
+        match their_actions_set:
             case ConstantSets.ROCK_ONLY:
                 return PaperAction()
             case ConstantSets.PAPER_ONLY:
@@ -77,45 +78,54 @@ class Player(Bot):
         their_action_ratios = {action: count / len(self.history) for action, count in self.their_action_counter.items()}
         max_ratio = max(their_action_ratios.items(), key=lambda x: x[1])
         if max_ratio[1] > 0.4:
-            if isinstance(max_ratio[0], RockAction):
-                return PaperAction()
-            elif isinstance(max_ratio[0], PaperAction):
-                return ScissorsAction()
-            elif isinstance(max_ratio[0], ScissorsAction):
-                return RockAction()
+            return counter(max_ratio[0])
         return None
     
     def counter_copycat(self):
         if len(self.history) < 5:
             return None
-        for i in range(4):
-            if type(self.history[-i-1].their_action) != type(self.history[-i-2].my_action):
+        for i in range(1, len(self.history) - 1):
+            if type(self.history[i].their_action) != type(self.history[i-1].my_action):
                 return None
-        if isinstance(self.history[-1].my_action, RockAction):
-            return PaperAction()
-        elif isinstance(self.history[-1].my_action, PaperAction):
-            return ScissorsAction()
-        elif isinstance(self.history[-1].my_action, ScissorsAction):
-            return RockAction()
+        return counter(self.history[-1].my_action)
         
 
     def counter_simple_countering(self):
         if len(self.history) < 5:
             return None
-        for i in range(4):
-            if isinstance(self.history[-i-2].my_action, RockAction) and not isinstance(self.history[-i-1].their_action, PaperAction):
-                return None
-            if isinstance(self.history[-i-2].my_action, PaperAction) and not isinstance(self.history[-i-1].their_action, ScissorsAction):
-                return None
-            if isinstance(self.history[-i-2].my_action, ScissorsAction) and not isinstance(self.history[-i-1].their_action, RockAction):
+        for i in range(1, len(self.history) - 1):
+            if type(self.history[i].their_action) != type(counter(self.history[i-1].my_action)):
                 return None
         my_last_action = self.history[-1].my_action
-        if isinstance(my_last_action, RockAction):
-            return ScissorsAction()
-        elif isinstance(my_last_action, PaperAction):
-            return RockAction()
-        elif isinstance(my_last_action, ScissorsAction):
-            return PaperAction()
+        return counter(counter(my_last_action))
+    
+
+    def counter_repetitive(self):
+        if len(self.history) < 5:
+            return None
+        for cycle_turns in range(1, int(len(self.history) // 2)):
+            is_cycle = True
+            for i in range(cycle_turns):
+                if not is_cycle:
+                    break
+                action = self.history[i].their_action
+                for j in range(i + cycle_turns, len(self.history), cycle_turns):
+                    if type(self.history[j].their_action) != type(action):
+                        is_cycle = False
+                        break
+            if is_cycle:
+                their_next_action = self.history[len(self.history) % cycle_turns].their_action
+                return counter(their_next_action)
+        return None
+
+def counter(action):
+    if isinstance(action, RockAction):
+        return PaperAction()
+    elif isinstance(action, PaperAction):
+        return ScissorsAction()
+    elif isinstance(action, ScissorsAction):
+        return RockAction()
+    return None
 
 
 @dataclass
