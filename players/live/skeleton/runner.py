@@ -4,9 +4,7 @@ The infrastructure for interacting with the engine.
 import argparse
 import json
 import socket
-from .actions import UpAction, DownAction
-from .states import GameState, TerminalState, RoundState
-from .states import STARTING_STACK, ANTE, BET_SIZE
+from .actions import RockAction, PaperAction, ScissorsAction
 from .bot import Bot
 
 class Runner():
@@ -14,8 +12,8 @@ class Runner():
     Interacts with the engine.
     '''
 
-    def __init__(self, pokerbot, socketfile):
-        self.pokerbot = pokerbot
+    def __init__(self, bot, socketfile):
+        self.bot = bot
         self.socketfile = socketfile
 
     def receive(self):
@@ -32,21 +30,29 @@ class Runner():
         '''
         Encodes an action and sends it to the engine.
         '''
+        match action:
+            case RockAction():
+                verb = 'R'
+            case PaperAction():
+                verb = 'P'
+            case ScissorsAction():
+                verb = 'S'
+            case _:
+                raise ValueError(f'Bad action type: {action}')
         self.socketfile.write(json.dumps({
             'type': 'action',
-            'action': {'verb': 'U' if isinstance(action, UpAction) else 'D'},
+            'action': {'verb': verb},
             'player': seat,
         }) + '\n')
         self.socketfile.flush()
 
     def run(self):
         '''
-        Reconstructs the game tree based on the action history received from the engine.
+        Reconstructs the game based on the actions received from the engine.
         '''
-        game_state = GameState(0, 0., 1)
-        round_state = None
+        match_clock = None
+        results = [None, None]
         seat = 0
-        new_round_ready = True
         for packet in self.receive():
             # okay to accept a single json object
             if packet[0] == '{':
@@ -56,43 +62,46 @@ class Runner():
                     match message['type']:
                         case 'hello':
                             pass
+                        
                         case 'time':
-                            game_state = GameState(game_state.bankroll, float(message['time']), game_state.round_num)
+                            match_clock = float(message['time'])
+                        
                         case 'info':
                             info = message['info']
                             seat = int(info['seat'])
-                            if 'hands' not in info:
-                                info['hands'] = [None, None]
-                            if 'pips' not in info:
-                                info['pips'] = [ANTE, ANTE]
-                            if 'stacks' not in info:
-                                info['stacks'] = [STARTING_STACK - ANTE, STARTING_STACK - ANTE]
-                            round_state = RoundState(seat, 0, 0, info['pips'], info['stacks'], info['hands'], None, None)
                             if 'new_game' in info and info['new_game']:
-                                self.pokerbot.handle_new_round(game_state, round_state, seat)
+                                results = [None, None]
+                        
                         case 'action':
                             match message['action']['verb']:
-                                case 'U':
-                                    round_state = round_state.proceed(UpAction())
-                                case 'D':
-                                    round_state = round_state.proceed(DownAction())
+                                case 'R':
+                                    results[message['seat']] = RockAction()
+                                case 'P':
+                                    results[message['seat']] = PaperAction()
+                                case 'S':
+                                    results[message['seat']] = ScissorsAction()
                                 case _:
                                     print(f'WARN Bad action type: {message}')
+                        
                         case 'payoff':
-                            delta = message['payoff']
-                            deltas = [-delta, -delta]
-                            deltas[seat] = delta
-                            round_state = TerminalState(deltas, round_state)
-                            game_state = GameState(game_state.bankroll + delta, game_state.game_clock, game_state.round_num)
-                            self.pokerbot.handle_round_over(game_state, round_state, seat)
+                            payoff = message['payoff']
+                            self.bot.handle_results(
+                                my_action = results[seat],
+                                their_action = results[1-seat],
+                                my_payoff = payoff,
+                                match_clock = match_clock,
+                            )
+                        
                         case 'goodbye':
                             return
+                    
                         case _:
                             print(f"WARN Bad message type: {message}")
+                        
                 except KeyError as e:
                     print(f'WARN Message missing required field "{e}": {message}')
                     continue
-            action = self.pokerbot.get_action(game_state, round_state, seat)
+            action = self.bot.get_action(match_clock = match_clock)
             self.send(action, seat)
 
 def parse_args():
@@ -104,18 +113,18 @@ def parse_args():
     parser.add_argument('port', type=int, help='Port on host to connect to')
     return parser.parse_args()
 
-def run_bot(pokerbot, args):
+def run_bot(bot, args):
     '''
-    Runs the pokerbot.
+    Runs the bot.
     '''
-    assert isinstance(pokerbot, Bot)
+    assert isinstance(bot, Bot)
     try:
         sock = socket.create_connection((args.host, args.port))
     except OSError:
         print('Could not connect to {}:{}'.format(args.host, args.port))
         return
     socketfile = sock.makefile('rw')
-    runner = Runner(pokerbot, socketfile)
+    runner = Runner(bot, socketfile)
     runner.run()
     socketfile.close()
     sock.close()
