@@ -42,7 +42,7 @@ class Player(Bot):
 
         Returns a RockAction(), PaperAction(), or ScissorsAction().
         '''
-        actions = [RockAction(), RockAction(), PaperAction(), PaperAction(), ScissorsAction(), ScissorsAction()]
+        actions = [RockAction(), RockAction(), PaperAction(), ScissorsAction(), ScissorsAction(), ScissorsAction()]
         return actions[len(self.history) % len(actions)]
 
     def random_action(self):
