@@ -41,25 +41,24 @@ class Player(Bot):
         Returns a RockAction(), PaperAction(), or ScissorsAction().
         '''
         if self.my_profit < -20 or len(self.history) < 4:
-            print("random")
             return self.random_action()
     
         if (action := self.counter_copycat()) is not None:
-            print("copycat")
             return action
         if (action := self.counter_simple_countering()) is not None:
-            print("simple countering")
             return action
-        if (action := self.counter_full_pattern()) is not None:
-            print("pattern")
+        if (action := self.counter_deterministic_cycle()) is not None:
             return action
-        if (action := self.counter_their_pattern()) is not None:
-            print("their pattern")
+        if (action := self.counter_full_pattern_big()) is not None:
+            return action
+        if (action := self.counter_their_pattern_big()) is not None:
             return action
         if (action := self.counter_biased()) is not None:
-            print("biased")
             return action
-        print("random")
+        if (action := self.counter_full_pattern_small()) is not None:
+            return action
+        if (action := self.counter_their_pattern_small()) is not None:
+            return action
         return self.random_action()
 
     def random_action(self):
@@ -69,7 +68,7 @@ class Player(Bot):
         their_action_counter = Counter([turn.their_action for turn in self.history])
         their_action_ratios = {action: count / len(self.history) for action, count in their_action_counter.items()}
         max_ratio = max(their_action_ratios.items(), key=lambda x: x[1])
-        if max_ratio[1] > 0.35:
+        if max_ratio[1] > 0.38:
             return counter(max_ratio[0])
         return None
     
@@ -88,8 +87,20 @@ class Player(Bot):
         return counter(counter(my_last_action))
 
 
-    def counter_full_pattern(self):
-        for pattern_length in range(30, 1, -1):
+    def counter_full_pattern_small(self):
+        for pattern_length in range(7, 2, -1):
+            if len(self.history) <= pattern_length:
+                continue
+            pattern = self.history[-pattern_length:]
+            for start in range(len(self.history) - pattern_length - 1, -1, -1):
+                if self.history[start:start+pattern_length] == pattern:
+                    their_next_action = self.history[start+pattern_length].their_action
+                    return counter(their_next_action)
+        return None
+
+
+    def counter_full_pattern_big(self):
+        for pattern_length in range(20, 7, -1):
             if len(self.history) <= pattern_length:
                 continue
             pattern = self.history[-pattern_length:]
@@ -99,9 +110,35 @@ class Player(Bot):
                     return counter(their_next_action)
         return None
     
+    def counter_deterministic_cycle(self):
+        for cycle_turns in range(1, int(len(self.history) // 2)):
+            is_cycle = True
+            for i in range(cycle_turns):
+                if not is_cycle:
+                    break
+                action = self.history[i].their_action
+                for j in range(i + cycle_turns, len(self.history), cycle_turns):
+                    if type(self.history[j].their_action) != type(action):
+                        is_cycle = False
+                        break
+            if is_cycle:
+                their_next_action = self.history[len(self.history) % cycle_turns].their_action
+                return counter(their_next_action)
+        return None
 
-    def counter_their_pattern(self):
-        for pattern_length in range(30, 1, -1):
+    def counter_their_pattern_small(self):
+        for pattern_length in range(7, 2, -1):
+            if len(self.history) <= pattern_length:
+                continue
+            pattern = [t.their_action for t in self.history[-pattern_length:]]
+            for start in range(len(self.history) - pattern_length - 1, -1, -1):
+                if [t.their_action for t in  self.history[start:start+pattern_length]] == pattern:
+                    their_next_action = self.history[start+pattern_length].their_action
+                    return counter(their_next_action)
+        return None
+
+    def counter_their_pattern_big(self):
+        for pattern_length in range(20, 7, -1):
             if len(self.history) <= pattern_length:
                 continue
             pattern = [t.their_action for t in self.history[-pattern_length:]]
